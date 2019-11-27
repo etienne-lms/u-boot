@@ -1,6 +1,19 @@
 config FIRMWARE
 	bool "Enable Firmware driver support"
 
+config SCMI_AGENT
+	bool "Enable SCMI support"
+	select OF_TRANSLATE
+	depends on DM_MAILBOX
+	help
+	  An SCMI agent communicates with a related SCMI server located
+	  in another sub-system, as a companion micro controller or a
+	  companion host in the CPU system.
+
+	  Communications between agent (client) and the SCMI server are
+	  based on message exchange. Messages can be exchange over tranport
+	  channels as a mailbox device.
+
 config SPL_FIRMWARE
 	bool "Enable Firmware driver support in SPL"
 	depends on FIRMWARE
