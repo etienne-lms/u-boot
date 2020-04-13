@@ -25,3 +25,4 @@ obj-$(CONFIG_RESET_HISILICON) += reset-hisilicon.o
 obj-$(CONFIG_RESET_IMX7) += reset-imx7.o
 obj-$(CONFIG_RESET_SYSCON) += reset-syscon.o
 obj-$(CONFIG_RESET_RASPBERRYPI) += reset-raspberrypi.o
+obj-$(CONFIG_RESET_SCMI) += reset-scmi.o
