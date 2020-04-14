@@ -45,10 +45,6 @@
 	};
 };
 
-&clk_hse {
-	st,digbypass;
-};
-
 &i2c4 {
 	u-boot,dm-pre-reloc;
 };
