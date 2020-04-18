@@ -19,15 +19,6 @@
 #define PAGELIST_ENTRIES_PER_PAGE \
 	((OPTEE_MSG_NONCONTIG_PAGE_SIZE / sizeof(u64)) - 1)
 
-typedef void (optee_invoke_fn)(unsigned long, unsigned long, unsigned long,
-			       unsigned long, unsigned long, unsigned long,
-			       unsigned long, unsigned long,
-			       struct arm_smccc_res *);
-
-struct optee_pdata {
-	optee_invoke_fn *invoke_fn;
-};
-
 struct rpc_param {
 	u32	a0;
 	u32	a1;
@@ -296,7 +287,6 @@ static u32 call_err_to_res(u32 call_err)
 
 static u32 do_call_with_arg(struct udevice *dev, struct optee_msg_arg *arg)
 {
-	struct optee_pdata *pdata = dev_get_platdata(dev);
 	struct rpc_param param = { .a0 = OPTEE_SMC_CALL_WITH_ARG };
 	void *page_list = NULL;
 
@@ -304,8 +294,9 @@ static u32 do_call_with_arg(struct udevice *dev, struct optee_msg_arg *arg)
 	while (true) {
 		struct arm_smccc_res res;
 
-		pdata->invoke_fn(param.a0, param.a1, param.a2, param.a3,
-				 param.a4, param.a5, param.a6, param.a7, &res);
+		arm_smccc_1_0_invoke(param.a0, param.a1, param.a2, param.a3,
+				     param.a4, param.a5, param.a6, param.a7,
+				     &res);
 
 		free(page_list);
 		page_list = NULL;
@@ -502,17 +493,17 @@ static const struct tee_driver_ops optee_ops = {
 	.shm_unregister = optee_shm_unregister,
 };
 
-static bool is_optee_api(optee_invoke_fn *invoke_fn)
+static bool is_optee_api(void)
 {
 	struct arm_smccc_res res;
 
-	invoke_fn(OPTEE_SMC_CALLS_UID, 0, 0, 0, 0, 0, 0, 0, &res);
+	arm_smccc_1_0_invoke(OPTEE_SMC_CALLS_UID, 0, 0, 0, 0, 0, 0, 0, &res);
 
 	return res.a0 == OPTEE_MSG_UID_0 && res.a1 == OPTEE_MSG_UID_1 &&
 	       res.a2 == OPTEE_MSG_UID_2 && res.a3 == OPTEE_MSG_UID_3;
 }
 
-static void print_os_revision(optee_invoke_fn *invoke_fn)
+static void print_os_revision(void)
 {
 	union {
 		struct arm_smccc_res smccc;
@@ -523,8 +514,8 @@ static void print_os_revision(optee_invoke_fn *invoke_fn)
 		}
 	};
 
-	invoke_fn(OPTEE_SMC_CALL_GET_OS_REVISION, 0, 0, 0, 0, 0, 0, 0,
-		  &res.smccc);
+	arm_smccc_1_0_invoke(OPTEE_SMC_CALL_GET_OS_REVISION,
+			     0, 0, 0, 0, 0, 0, 0, &res.smccc);
 
 	if (res.result.build_id)
 		debug("OP-TEE revision %lu.%lu (%08lx)\n", res.result.major,
@@ -534,29 +525,30 @@ static void print_os_revision(optee_invoke_fn *invoke_fn)
 		      res.result.minor);
 }
 
-static bool api_revision_is_compatible(optee_invoke_fn *invoke_fn)
+static bool api_revision_is_compatible(void)
 {
 	union {
 		struct arm_smccc_res smccc;
 		struct optee_smc_calls_revision_result result;
 	} res;
 
-	invoke_fn(OPTEE_SMC_CALLS_REVISION, 0, 0, 0, 0, 0, 0, 0, &res.smccc);
+	arm_smccc_1_0_invoke(OPTEE_SMC_CALLS_REVISION,
+			     0, 0, 0, 0, 0, 0, 0, &res.smccc);
 
 	return res.result.major == OPTEE_MSG_REVISION_MAJOR &&
 	       (int)res.result.minor >= OPTEE_MSG_REVISION_MINOR;
 }
 
-static bool exchange_capabilities(optee_invoke_fn *invoke_fn, u32 *sec_caps)
+static bool exchange_capabilities(u32 *sec_caps)
 {
 	union {
 		struct arm_smccc_res smccc;
 		struct optee_smc_exchange_capabilities_result result;
 	} res;
 
-	invoke_fn(OPTEE_SMC_EXCHANGE_CAPABILITIES,
-		  OPTEE_SMC_NSEC_CAP_UNIPROCESSOR, 0, 0, 0, 0, 0, 0,
-		  &res.smccc);
+	arm_smccc_1_0_invoke(OPTEE_SMC_EXCHANGE_CAPABILITIES,
+			     OPTEE_SMC_NSEC_CAP_UNIPROCESSOR,
+			     0, 0, 0, 0, 0, 0, &res.smccc);
 
 	if (res.result.status != OPTEE_SMC_RETURN_OK)
 		return false;
@@ -566,69 +558,23 @@ static bool exchange_capabilities(optee_invoke_fn *invoke_fn, u32 *sec_caps)
 	return true;
 }
 
-/* Simple wrapper functions to be able to use a function pointer */
-static void optee_smccc_smc(unsigned long a0, unsigned long a1,
-			    unsigned long a2, unsigned long a3,
-			    unsigned long a4, unsigned long a5,
-			    unsigned long a6, unsigned long a7,
-			    struct arm_smccc_res *res)
-{
-	arm_smccc_smc(a0, a1, a2, a3, a4, a5, a6, a7, res);
-}
-
-static void optee_smccc_hvc(unsigned long a0, unsigned long a1,
-			    unsigned long a2, unsigned long a3,
-			    unsigned long a4, unsigned long a5,
-			    unsigned long a6, unsigned long a7,
-			    struct arm_smccc_res *res)
-{
-	arm_smccc_hvc(a0, a1, a2, a3, a4, a5, a6, a7, res);
-}
-
-static optee_invoke_fn *get_invoke_func(struct udevice *dev)
-{
-	const char *method;
-
-	debug("optee: looking for conduit method in DT.\n");
-	method = ofnode_get_property(dev->node, "method", NULL);
-	if (!method) {
-		debug("optee: missing \"method\" property\n");
-		return ERR_PTR(-ENXIO);
-	}
-
-	if (!strcmp("hvc", method))
-		return optee_smccc_hvc;
-	else if (!strcmp("smc", method))
-		return optee_smccc_smc;
-
-	debug("optee: invalid \"method\" property: %s\n", method);
-	return ERR_PTR(-EINVAL);
-}
-
-static int optee_ofdata_to_platdata(struct udevice *dev)
-{
-	struct optee_pdata *pdata = dev_get_platdata(dev);
-
-	pdata->invoke_fn = get_invoke_func(dev);
-	if (IS_ERR(pdata->invoke_fn))
-		return PTR_ERR(pdata->invoke_fn);
-
-	return 0;
-}
-
 static int optee_probe(struct udevice *dev)
 {
-	struct optee_pdata *pdata = dev_get_platdata(dev);
 	u32 sec_caps;
+	int rc;
 
-	if (!is_optee_api(pdata->invoke_fn)) {
+	rc = devm_arm_smccc_1_0_set_conduit(dev, "method");
+	if (rc)
+		return rc;
+
+	if (!is_optee_api()) {
 		debug("%s: OP-TEE api uid mismatch\n", __func__);
 		return -ENOENT;
 	}
 
-	print_os_revision(pdata->invoke_fn);
+	print_os_revision();
 
-	if (!api_revision_is_compatible(pdata->invoke_fn)) {
+	if (!api_revision_is_compatible()) {
 		debug("%s: OP-TEE api revision mismatch\n", __func__);
 		return -ENOENT;
 	}
@@ -638,7 +584,7 @@ static int optee_probe(struct udevice *dev)
 	 * dynamic shared memory provided by normal world. To keep things
 	 * simple we're only using dynamic shared memory in this driver.
 	 */
-	if (!exchange_capabilities(pdata->invoke_fn, &sec_caps) ||
+	if (!exchange_capabilities(&sec_caps) ||
 	    !(sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM)) {
 		debug("%s: OP-TEE capabilities mismatch\n", __func__);
 		return -ENOENT;
@@ -656,9 +602,7 @@ U_BOOT_DRIVER(optee) = {
 	.name = "optee",
 	.id = UCLASS_TEE,
 	.of_match = optee_match,
-	.ofdata_to_platdata = optee_ofdata_to_platdata,
 	.probe = optee_probe,
 	.ops = &optee_ops,
-	.platdata_auto_alloc_size = sizeof(struct optee_pdata),
 	.priv_auto_alloc_size = sizeof(struct optee_private),
 };
