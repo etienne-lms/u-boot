@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2015, Linaro Limited
+ * Copyright (c) 2015-2020, Linaro Limited
  */
 #ifndef __LINUX_ARM_SMCCC_H
 #define __LINUX_ARM_SMCCC_H
@@ -55,6 +55,14 @@
 
 #include <linux/linkage.h>
 #include <linux/types.h>
+
+enum arm_smccc_conduit {
+	SMCCC_CONDUIT_RESET = 0,	/* No conduit method queried yet */
+	SMCCC_CONDUIT_NONE,		/* No conduit method found yet */
+	SMCCC_CONDUIT_SMC,		/* Use SMC as SMCCC conduit */
+	SMCCC_CONDUIT_HVC,		/* Use HVC as SMCCC conduit */
+};
+
 /**
  * struct arm_smccc_res - Result from SMC/HVC call
  * @a0-a3 result values from registers 0 to 3
@@ -121,5 +129,61 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
 
 #define arm_smccc_hvc_quirk(...) __arm_smccc_hvc(__VA_ARGS__)
 
+#define SMCCC_RET_NOT_SUPPORTED         ((unsigned long)-1)
+
+struct udevice;
+
+#ifdef CONFIG_ARM_SMCCC
+/*
+ * arm_smccc_1_0_invoke() - make an SMCCC v1.0 compliant call
+ *
+ * This is a macro taking eight source arguments and an return structure.
+ * Conduit was registered during drivers initialization.
+ *
+ * @a0-a7: arguments passed in registers 0 to 7
+ * @res: result values from registers 0 to 3
+ *
+ * This macro will make either an HVC call or an SMC call depending on the
+ * specified SMCCC conduit. If no valid conduit is available then -1
+ * (SMCCC_RET_NOT_SUPPORTED) is returned in @res.a0.
+ *
+ * The return value provides the conduit that was used.
+ */
+enum arm_smccc_conduit arm_smccc_1_0_invoke(unsigned long a0, unsigned long a1,
+					    unsigned long a2, unsigned long a3,
+					    unsigned long a4, unsigned long a5,
+					    unsigned long a6, unsigned long a7,
+					    struct arm_smccc_res *res);
+
+/**
+ * devm_arm_smccc_1_0_set_conduit() - Set or find SMCCC v1.0 conduit in FDT
+ *
+ * @dev: device requesting a conduit
+ * @prop: ID of string property "hvc" or "smc" in the device node or NULL
+ *
+ * Set the SMCCC invocation conduit based on device node if @prop is not NULL
+ * and found in U-Boot FDT. If property is not found or @prop is NULL, check
+ * there is a conduit method already registered or attempt to find one from
+ * a generic device in the U-Boot DT.
+ *
+ * Returns 0 on success, -ENXIO if not conduit found, -EINVAL otherwise.
+ */
+int devm_arm_smccc_1_0_set_conduit(struct udevice *dev, const char *prop);
+#else
+static inline enum arm_smccc_conduit
+arm_smccc_1_0_invoke(unsigned long a0, unsigned long a1, unsigned long a2,
+		     unsigned long a3, unsigned long a4, unsigned long a5,
+		     unsigned long a6, unsigned long a7,
+		     struct arm_smccc_res *res)
+{
+	return SMCCC_CONDUIT_NONE;
+}
+
+static inline int devm_arm_smccc_1_0_set_conduit(struct udevice *dev,
+						 const char *prop)
+{
+	return -ENXIO;
+}
+#endif /*CONFIG_HAVE_ARM_SMCCC*/
 #endif /*__ASSEMBLY__*/
 #endif /*__LINUX_ARM_SMCCC_H*/
