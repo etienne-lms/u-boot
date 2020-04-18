@@ -17,6 +17,7 @@
 #include <dm/devres.h>
 #include <dm/lists.h>
 #include <dm/ofnode.h>
+#include <linux/arm-smccc.h>
 #include <linux/compat.h>
 #include <linux/errno.h>
 #include <linux/io.h>
@@ -199,6 +200,7 @@ static void clear_smt_channel(struct scmi_shm_buf *shm_buf)
 	hdr->channel_status &= ~SCMI_SHMEM_CHAN_STAT_CHANNEL_ERROR;
 }
 
+#ifdef CONFIG_DM_MAILBOX
 struct scmi_mbox_channel {
 	struct scmi_shm_buf shm_buf;
 	struct mbox_chan mbox;
@@ -273,6 +275,75 @@ out:
 
 	return rc;
 }
+#endif /* CONFIG_DM_MAILBOX */
+
+#ifdef CONFIG_ARM_SMCCC
+struct scmi_arm_smc_channel {
+	ulong func_id;
+	struct scmi_shm_buf shm_buf;
+};
+
+static int arm_smc_process_msg(struct udevice *dev, struct scmi_msg *msg)
+{
+	struct scmi_agent *agent = dev_get_priv(dev);
+	struct scmi_arm_smc_channel *chan = agent->method_priv;
+	struct arm_smccc_res res;
+	int rc;
+
+	rc = write_msg_to_smt(dev, &chan->shm_buf, msg);
+	if (rc)
+		return rc;
+
+	arm_smccc_1_0_invoke(chan->func_id, 0, 0, 0, 0, 0, 0, 0, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		rc = -EINVAL;
+	else
+		rc = read_resp_from_smt(dev, &chan->shm_buf, msg);
+
+	clear_smt_channel(&chan->shm_buf);
+
+	return rc;
+}
+
+struct method_ops arm_smc_channel_ops = {
+	.process_msg = arm_smc_process_msg,
+};
+
+static int probe_arm_smc_channel(struct udevice *dev)
+{
+	struct scmi_agent *agent = dev_get_priv(dev);
+	struct scmi_arm_smc_channel *chan;
+	ofnode node = dev_ofnode(dev);
+	u32 func_id;
+	int rc;
+
+	chan = devm_kzalloc(dev, sizeof(*chan), GFP_KERNEL);
+	if (!chan)
+		return -ENOMEM;
+
+	rc = devm_arm_smccc_1_0_set_conduit(dev, NULL);
+	if (rc)
+		return rc;
+
+	if (ofnode_read_u32(node, "arm,smc-id", &func_id)) {
+		dev_err(dev, "Missing property func-id\n");
+		return -EINVAL;
+	}
+
+	chan->func_id = func_id;
+
+	rc = get_shm_buffer(dev, &chan->shm_buf);
+	if (rc) {
+		dev_err(dev, "Failed to get shm resources: %d\n", rc);
+		return rc;
+	}
+
+	agent->method_ops = &arm_smc_channel_ops;
+	agent->method_priv = (void *)chan;
+
+	return rc;
+}
+#endif /* CONFIG_ARM_SMCCC */
 
 /*
  * Exported functions by the SCMI agent
@@ -304,8 +375,14 @@ enum scmi_transport_channel {
 static int scmi_agent_probe(struct udevice *dev)
 {
 	switch (dev_get_driver_data(dev)) {
+#ifdef CONFIG_DM_MAILBOX
 	case SCMI_MAILBOX_TRANSPORT:
 		return probe_mailbox_channel(dev);
+#endif
+#ifdef CONFIG_ARM_SMCCC
+	case SCMI_ARM_SMCCC_TRANSPORT:
+		return probe_arm_smc_channel(dev);
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -346,7 +423,12 @@ static int scmi_agent_bind(struct udevice *dev)
 }
 
 static const struct udevice_id scmi_agent_ids[] = {
+#ifdef CONFIG_DM_MAILBOX
 	{ .compatible = "arm,scmi", .data = SCMI_MAILBOX_TRANSPORT },
+#endif
+#ifdef CONFIG_ARM_SMCCC
+	{ .compatible = "arm,scmi-smc", .data = SCMI_ARM_SMCCC_TRANSPORT },
+#endif
 	{ }
 };
 
