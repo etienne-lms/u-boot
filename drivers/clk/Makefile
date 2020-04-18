@@ -31,6 +31,7 @@ obj-$(CONFIG_CLK_K210) += kendryte/
 obj-$(CONFIG_CLK_MPC83XX) += mpc83xx_clk.o
 obj-$(CONFIG_CLK_OWL) += owl/
 obj-$(CONFIG_CLK_RENESAS) += renesas/
+obj-$(CONFIG_CLK_SCMI) += clk_scmi.o
 obj-$(CONFIG_CLK_SIFIVE) += sifive/
 obj-$(CONFIG_ARCH_SUNXI) += sunxi/
 obj-$(CONFIG_CLK_STM32F) += clk_stm32f.o
