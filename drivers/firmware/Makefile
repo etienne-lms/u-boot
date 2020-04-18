@@ -1,3 +1,4 @@
+obj-$(CONFIG_ARM_SMCCC)		+= arm_smccc_conduit.o
 obj-$(CONFIG_FIRMWARE)		+= firmware-uclass.o
 obj-$(CONFIG_$(SPL_)ARM_PSCI_FW)	+= psci.o
 obj-$(CONFIG_TI_SCI_PROTOCOL)	+= ti_sci.o
