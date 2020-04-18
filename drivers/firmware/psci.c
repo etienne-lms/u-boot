@@ -22,29 +22,19 @@
 
 #define DRIVER_NAME "psci"
 
-#define PSCI_METHOD_HVC 1
-#define PSCI_METHOD_SMC 2
-
-int __efi_runtime_data psci_method;
-
 unsigned long __efi_runtime invoke_psci_fn
 		(unsigned long function_id, unsigned long arg0,
 		 unsigned long arg1, unsigned long arg2)
 {
 	struct arm_smccc_res res;
+	enum arm_smccc_conduit conduit;
 
-	/*
-	 * In the __efi_runtime we need to avoid the switch statement. In some
-	 * cases the compiler creates lookup tables to implement switch. These
-	 * tables are not correctly relocated when SetVirtualAddressMap is
-	 * called.
-	 */
-	if (psci_method == PSCI_METHOD_SMC)
-		arm_smccc_smc(function_id, arg0, arg1, arg2, 0, 0, 0, 0, &res);
-	else if (psci_method == PSCI_METHOD_HVC)
-		arm_smccc_hvc(function_id, arg0, arg1, arg2, 0, 0, 0, 0, &res);
-	else
+	conduit = arm_smccc_1_0_invoke(function_id, arg0, arg1, arg2,
+				       0, 0, 0, 0, &res);
+
+	if (conduit == SMCCC_CONDUIT_NONE)
 		res.a0 = PSCI_RET_DISABLED;
+
 	return res.a0;
 }
 
@@ -67,30 +57,13 @@ static int psci_bind(struct udevice *dev)
 
 static int psci_probe(struct udevice *dev)
 {
-	const char *method;
-
-	method = ofnode_read_string(dev_ofnode(dev), "method");
-	if (!method) {
-		pr_warn("missing \"method\" property\n");
-		return -ENXIO;
-	}
-
-	if (!strcmp("hvc", method)) {
-		psci_method = PSCI_METHOD_HVC;
-	} else if (!strcmp("smc", method)) {
-		psci_method = PSCI_METHOD_SMC;
-	} else {
-		pr_warn("invalid \"method\" property: %s\n", method);
-		return -EINVAL;
-	}
-
-	return 0;
+	return devm_arm_smccc_1_0_set_conduit(dev, "method");
 }
 
 /**
  * void do_psci_probe() - probe PSCI firmware driver
  *
- * Ensure that psci_method is initialized.
+ * Ensure that PSC device is probed for SMCCC conduit is be set.
  */
 static void __maybe_unused do_psci_probe(void)
 {
