@@ -25,6 +25,7 @@
 		optee {
 			compatible = "linaro,optee-tz";
 			method = "smc";
+			u-boot,dm-pre-reloc;
 		};
 	};
 
@@ -32,6 +33,7 @@
 		optee@de000000 {
 			reg = <0xde000000 0x02000000>;
 			no-map;
+			u-boot,dm-pre-reloc;
 		};
 	};
 
