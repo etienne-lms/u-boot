@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2018 Linaro Limited
+ * Copyright (c) 2018-2020 Linaro Limited
  */
 
 #include <common.h>
+#include <cpu_func.h>
 #include <dm.h>
 #include <log.h>
 #include <malloc.h>
@@ -294,6 +295,15 @@ static u32 call_err_to_res(u32 call_err)
 	}
 }
 
+static void flush_shm_dcache(struct udevice *dev, struct optee_msg_arg *arg)
+{
+	flush_dcache_range(rounddown((ulong)arg, CONFIG_SYS_CACHELINE_SIZE),
+			   roundup((ulong)arg + sizeof(*arg),
+				   CONFIG_SYS_CACHELINE_SIZE));
+
+	tee_flush_all_shm_dcache(dev);
+}
+
 static u32 do_call_with_arg(struct udevice *dev, struct optee_msg_arg *arg)
 {
 	struct optee_pdata *pdata = dev_get_platdata(dev);
@@ -304,8 +314,15 @@ static u32 do_call_with_arg(struct udevice *dev, struct optee_msg_arg *arg)
 	while (true) {
 		struct arm_smccc_res res;
 
-		pdata->invoke_fn(param.a0, param.a1, param.a2, param.a3,
-				 param.a4, param.a5, param.a6, param.a7, &res);
+		if (!(gd->flags & GD_FLG_RELOC))
+			flush_shm_dcache(dev, arg);
+
+		arm_smccc_1_0_invoke(param.a0, param.a1, param.a2, param.a3,
+				     param.a4, param.a5, param.a6, param.a7,
+				     &res);
+
+		if (!(gd->flags & GD_FLG_RELOC))
+			flush_shm_dcache(dev, arg);
 
 		free(page_list);
 		page_list = NULL;
