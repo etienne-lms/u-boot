@@ -280,8 +280,6 @@ struct scmi_arm_smc_channel {
 	struct scmi_shm_buf shm_buf;
 };
 
-#define SMCCC_RET_NOT_SUPPORTED         ((unsigned long)-1)
-
 static int arm_smc_process_msg(struct udevice *dev, struct scmi_msg *msg)
 {
 	struct scmi_agent *agent = dev_get_priv(dev);
@@ -293,7 +291,7 @@ static int arm_smc_process_msg(struct udevice *dev, struct scmi_msg *msg)
 	if (rc)
 		return rc;
 
-	arm_smccc_smc(chan->func_id, 0, 0, 0, 0, 0, 0, 0, &res);
+	arm_smccc_1_0_invoke(chan->func_id, 0, 0, 0, 0, 0, 0, 0, &res);
 	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
 		rc = -EINVAL;
 	else
@@ -319,6 +317,10 @@ static int probe_arm_smc_channel(struct udevice *dev)
 	chan = devm_kzalloc(dev, sizeof(*chan), GFP_KERNEL);
 	if (!chan)
 		return -ENOMEM;
+
+	rc = devm_arm_smccc_1_0_set_conduit(dev, NULL);
+	if (rc)
+		return rc;
 
 	if (ofnode_read_u32(node, "arm,smc-id", &func_id)) {
 		dev_err(dev, "Missing property func-id\n");
