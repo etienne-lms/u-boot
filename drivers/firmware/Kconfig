@@ -5,7 +5,7 @@ config SCMI_FIRMWARE
 	bool "Enable SCMI support"
 	select FIRMWARE
 	select OF_TRANSLATE
-	depends on DM_MAILBOX || ARM_SMCCC
+	depends on DM_MAILBOX || ARM_SMCCC || OPTEE
 	help
 	  System Control and Management Interface (SCMI) is a communication
 	  protocol that defines standard interfaces for power, performance
@@ -19,7 +19,8 @@ config SCMI_FIRMWARE
 	  Communications between agent (client) and the SCMI server are
 	  based on message exchange. Messages can be exchange over tranport
 	  channels as a mailbox device or an Arm SMCCC service with some
-	  piece of identified shared memory.
+	  piece of identified shared memory, or can can exhanges using
+	  OP-TEE SCMI service.
 
 config SPL_FIRMWARE
 	bool "Enable Firmware driver support in SPL"
