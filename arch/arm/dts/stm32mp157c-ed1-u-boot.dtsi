@@ -217,3 +217,11 @@
 		bias-pull-up;
 	};
 };
+
+&optee {
+	u-boot,dm-pre-reloc;
+};
+
+&optee_memory {
+	u-boot,dm-pre-reloc;
+};

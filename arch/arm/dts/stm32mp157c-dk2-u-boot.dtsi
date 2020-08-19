@@ -4,3 +4,11 @@
  */
 
 #include "stm32mp157a-dk1-u-boot.dtsi"
+
+&optee_memory {
+	u-boot,dm-pre-reloc;
+};
+
+&optee {
+	u-boot,dm-pre-reloc;
+};
