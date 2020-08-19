@@ -10,3 +10,11 @@
 		reset-gpios = <&gpioa 10 GPIO_ACTIVE_LOW>;
 	};
 };
+
+&optee_memory {
+	u-boot,dm-pre-reloc;
+};
+
+&optee {
+	u-boot,dm-pre-reloc;
+};

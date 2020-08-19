@@ -51,6 +51,12 @@
 	};
 
 	firmware {
+		optee: optee {
+			compatible = "linaro,optee-tz";
+			method = "smc";
+			status = "disabled";
+		};
+
 		scmi0: scmi-0 {
 			compatible = "arm,scmi-smc";
 			#address-cells = <1>;
