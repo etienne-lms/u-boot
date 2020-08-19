@@ -31,3 +31,28 @@ int dram_init(void)
 
 	return 0;
 }
+
+ulong board_get_usable_ram_top(ulong total_size)
+{
+	int off, node;
+	fdt_addr_t reg;
+
+
+	off = fdt_path_offset(gd->fdt_blob, "/reserved-memory/");
+	if (off < 0)
+		return gd->ram_top;
+
+	for (node = fdt_first_subnode(gd->fdt_blob, off);
+	     node >= 0;
+	     node = fdt_next_subnode(gd->fdt_blob, node)) {
+		if (!strncmp(fdt_get_name(gd->fdt_blob, node, NULL),
+			     "optee@", 6)) {
+			reg = fdtdec_get_addr(gd->fdt_blob, node, "reg");
+			if (reg != FDT_ADDR_T_NONE)
+				return reg;
+		}
+	}
+
+
+	return gd->ram_top;
+}
