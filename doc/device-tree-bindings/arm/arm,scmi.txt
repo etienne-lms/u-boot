@@ -44,6 +44,19 @@ communication channel for a particular protocol, the 3 properties namely:
 mboxes, mbox-names and shmem shall be present in the sub-node corresponding
 to that protocol.
 
+SCMI Agent over on OP-TEE Service
+---------------------------------
+
+On systems that support OP-TEE, SCMI messages can be exchange between agent
+and the SCMI server using an OP-TEE invocation.
+
+Required properties:
+
+- compatible : "linaro,scmi-optee"
+
+- agent_id : agent identifier assigned to the agent and known from the SCMI
+	  server in OP-TEE.
+
 Clock/Performance bindings for the clocks/OPPs based on SCMI Message Protocol
 ------------------------------------------------------------
 
