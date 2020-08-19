@@ -25,9 +25,12 @@
 		u-boot,dm-pre-reloc;
 	};
 
-	/* need PSCI for sysreset during board_f */
+	/*
+	 * Need PSCI for sysreset during board_f and for
+	 * SMCCC conduit setting prior relocation.
+	 */
 	psci {
-		u-boot,dm-pre-proper;
+		u-boot,dm-pre-reloc;
 	};
 
 	reboot {
@@ -152,4 +155,36 @@
 
 &usbotg_hs {
 	compatible = "st,stm32mp1-hsotg", "snps,dwc2";
+};
+
+&scmi_sram {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi0_shm {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi1_shm {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi0 {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi0_clk {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi0_reset {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi1 {
+	u-boot,dm-pre-reloc;
+};
+
+&scmi1_clk {
+	u-boot,dm-pre-reloc;
 };
