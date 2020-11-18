@@ -47,7 +47,7 @@ struct efi_mm_communicate_header {
 	efi_guid_t header_guid;
 	size_t     message_len;
 	u8         data[];
-};
+} __packed;
 
 #define MM_COMMUNICATE_HEADER_SIZE \
 	(sizeof(struct efi_mm_communicate_header))
