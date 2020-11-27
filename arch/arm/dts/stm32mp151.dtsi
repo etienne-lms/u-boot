@@ -52,6 +52,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges = <0 0x2ffff000 0x1000>;
+		status = "disabled";
 
 		scmi0_shm: scmi_shm@0 {
 			reg = <0 0x80>;
@@ -74,7 +75,6 @@
 			#size-cells = <0>;
 			status = "okay";
 			agent-id = <1>;
-			shmem = <&scmi0_shm>;
 
 			scmi0_clk: protocol@14 {
 				reg = <0x14>;

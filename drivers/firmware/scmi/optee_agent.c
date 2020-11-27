@@ -18,7 +18,7 @@
 
 #define SCMI_SHM_SIZE		128
 
-#define WITH_DEPRECATED_PTA_CMDS
+#undef WITH_DEPRECATED_PTA_CMDS
 
 struct scmi_optee_channel {
 	struct udevice *tee;
