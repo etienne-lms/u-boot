@@ -16,11 +16,19 @@
 
 #include "smt.h"
 
+#define SCMI_SHM_SIZE		128
+
+#define WITH_DEPRECATED_PTA_CMDS
+
 struct scmi_optee_channel {
 	struct udevice *tee;
 	u32 tee_session;
-	u32 channel_id;
+	u32 agent_id;
+	struct tee_shm *shm;
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	struct scmi_smt smt;
+	u32 channel_id;
+#endif
 };
 
 #define TA_SCMI_UUID { 0xa8cfe406, 0xd4f5, 0x4a2e, \
@@ -30,15 +38,19 @@ struct scmi_optee_channel {
  * API of commands supported the SCMI TA in OP-TEE
  *
  * TA_CMD_GET_CHANNEL - Get channel identifer for a buffer pool
- * param[0] (in value) - Message buffer physical start address
- * param[1] (in value) - Message buffer byte size
- * param[2] (out value) - value.a: Output channel identifier
+ * [in]     value[0].a - Agent ID
  *
  * TA_CMD_PROCESS_CHANNEL - Process message in SCMI channel
- * param[0] (in value) - value.a: SCMI channel identifier
+ * [in]     value[0].a - Channel ID
+ * [in/out] memref[1] - Message buffer
+ *
+ * TA_CMD_PROCESS_MESSAGE - Process message from SCMI agent
+ * [in]     value[0].a - Agent ID
+ * [in/out] memref[1] - Message buffer
  */
 #define TA_CMD_GET_CHANNEL_ID		0x1
 #define TA_CMD_PROCESS_CHANNEL		0x2
+#define TA_CMD_PROCESS_MESSAGE		0x3
 
 static int tee_ret2errno(u32 tee_retval)
 {
@@ -86,6 +98,7 @@ static int open_optee_session(struct scmi_optee_channel *chan)
 	return 0;
 }
 
+#ifdef WITH_DEPRECATED_PTA_CMDS
 static int get_optee_channel(struct scmi_optee_channel *chan)
 {
 	struct tee_invoke_arg arg;
@@ -117,6 +130,7 @@ static int get_optee_channel(struct scmi_optee_channel *chan)
 
 	return tee_ret2errno(arg.ret);
 }
+#endif //WITH_DEPRECATED_PTA_CMDS
 
 static struct scmi_optee_channel *scmi_optee_get_priv(struct udevice *dev)
 {
@@ -127,15 +141,23 @@ static int scmi_optee_process_msg(struct udevice *dev, struct scmi_msg *msg)
 {
 	struct scmi_optee_channel *chan = scmi_optee_get_priv(dev);
 	struct tee_invoke_arg arg;
-	struct tee_param param[1];
+	struct tee_param param[2];
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	struct scmi_smt_header *hdr = (void *)chan->smt.buf;
+#else
+	struct scmi_smt_header *hdr = chan->shm->addr;
+	struct scmi_smt smt = {
+		.buf = chan->shm->addr,
+		.size = chan->shm->size,
+	};
+#endif
 	int rc;
 
 	if (!chan->tee)
 		return -ENODEV;
 
-#if 0 // to test this SMT factorisation
-	scmi_write_msg_to_smt(dev, &chan->smt, msg);
+#ifndef WITH_DEPRECATED_PTA_CMDS
+	scmi_write_msg_to_smt(dev, &smt, msg);
 #else
 	if (!(hdr->channel_status & SCMI_SHMEM_CHAN_STAT_CHANNEL_FREE)) {
 		dev_err(dev, "SCMI channel busy\n");
@@ -163,15 +185,28 @@ static int scmi_optee_process_msg(struct udevice *dev, struct scmi_msg *msg)
 #endif
 
 	memset(&arg, 0, sizeof(arg));
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	arg.func = TA_CMD_PROCESS_CHANNEL;
+#else
+	arg.func = TA_CMD_PROCESS_MESSAGE;
+#endif
 	arg.session = chan->tee_session;
 
 	memset(param, 0, sizeof(param));
 	param[0].attr = TEE_PARAM_ATTR_TYPE_VALUE_INPUT;
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	param[0].u.value.a = chan->channel_id;
+#else
+	param[0].u.value.a = chan->agent_id;
+#endif
+
+#ifndef WITH_DEPRECATED_PTA_CMDS
+	param[1].attr = TEE_PARAM_ATTR_TYPE_MEMREF_INOUT;
+	param[1].u.memref.shm = chan->shm;
+	param[1].u.memref.size = chan->shm->size;
+#endif
 
 	rc = tee_invoke_func(chan->tee, &arg, ARRAY_SIZE(param), param);
-
 	if (rc) {
 		dev_err(chan->dev, "SCMI OP-TEE msg: invocation failed\n");
 	} else if (hdr->channel_status & SCMI_SHMEM_CHAN_STAT_CHANNEL_ERROR) {
@@ -181,8 +216,6 @@ static int scmi_optee_process_msg(struct udevice *dev, struct scmi_msg *msg)
 		rc = tee_ret2errno(arg.ret);
 	}
 
-	hdr->channel_status |= SCMI_SHMEM_CHAN_STAT_CHANNEL_FREE;
-
 	if (!rc) {
 		if (hdr->length > msg->out_msg_sz + sizeof(hdr->msg_header))
 			return -ETOOSMALL;
@@ -191,9 +224,37 @@ static int scmi_optee_process_msg(struct udevice *dev, struct scmi_msg *msg)
 		memcpy(msg->out_msg, hdr->msg_payload, msg->out_msg_sz);
 	}
 
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	scmi_clear_smt_channel(&chan->smt);
+#else
+	scmi_clear_smt_channel(&smt);
+#endif
+
 
 	return rc;
+}
+
+static int alloc_shm(struct scmi_optee_channel *chan)
+{
+	struct tee_shm *shm = NULL;
+	struct scmi_smt_header *hdr = NULL;
+	int rc = 0;
+
+	rc = tee_shm_alloc(chan->tee, SCMI_SHM_SIZE, TEE_SHM_ALLOC, &shm);
+	if (rc)
+		return rc;
+
+	chan->shm = shm;
+
+	memset(chan->shm->addr, 0, SCMI_SHM_SIZE);
+	hdr = chan->shm->addr;
+	hdr->channel_status |= SCMI_SHMEM_CHAN_STAT_CHANNEL_FREE;
+
+	/*
+	 * Note: let OP-TEE device removal unregister the shared memory
+	 * when exiting U-Boot execution.
+	 */
+	return 0;
 }
 
 static int scmi_optee_remove(struct udevice *dev)
@@ -202,14 +263,14 @@ static int scmi_optee_remove(struct udevice *dev)
 	int rc = 0;
 
 	if (chan && chan->tee) {
-		int rc2 = tee_close_session(chan->tee, chan->tee_session);
+		rc = tee_close_session(chan->tee, chan->tee_session);
+		if (rc)
+			return rc;
 
 		chan->tee = NULL;
-		if (!rc)
-			rc = rc2;
 	}
 
-	return rc;
+	return 0;
 }
 
 static int scmi_optee_probe(struct udevice *dev)
@@ -218,26 +279,39 @@ static int scmi_optee_probe(struct udevice *dev)
 	u32 channel_id;
 	int rc;
 
-	if (dev_read_u32(dev, "agent-id", &channel_id))
+	if (dev_read_u32(dev, "agent-id", &channel_id)) {
 		dev_info(dev, "No channel ID specified, assume 0\n");
-	else
+	} else {
+#ifdef WITH_DEPRECATED_PTA_CMDS
 		chan->channel_id = channel_id;
+#endif
+		chan->agent_id = channel_id;
+	}
 
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	rc = scmi_dt_get_smt_buffer(dev, &chan->smt);
 	if (rc) {
 		dev_err(dev, "Failed to get smt resources: %d\n", rc);
 		goto out;
 	}
+#endif
 
 	rc = open_optee_session(chan);
 	if (rc)
 		goto out;
 
+#ifdef WITH_DEPRECATED_PTA_CMDS
 	rc = get_optee_channel(chan);
-
-out:
 	if (rc)
+		goto out;
+#endif
+
+	rc = alloc_shm(chan);
+out:
+	if (rc) {
+		free_shm(chan);
 		devm_kfree(dev, chan);
+	}
 
 	return rc;
 }
