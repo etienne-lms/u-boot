@@ -17,7 +17,6 @@ struct sandbox_scmi_service;
  * @rate:	Clock rate in Hertz
  */
 struct sandbox_scmi_clk {
-	uint id;
 	bool enabled;
 	ulong rate;
 };
@@ -28,7 +27,6 @@ struct sandbox_scmi_clk {
  * @asserted:	Reset control state: true if asserted, false if desasserted
  */
 struct sandbox_scmi_reset {
-	uint id;
 	bool asserted;
 };
 

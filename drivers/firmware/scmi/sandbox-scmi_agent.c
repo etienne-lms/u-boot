@@ -27,7 +27,7 @@
  * See IDs in scmi0_clk[]/scmi0_reset[] and "sandbox-scmi-agent@0" in test.dts.
  *
  * Agent #1 simulates 1 clock.
- * See IDs in scmi1_clk[] and "sandbox-scmi-agent@1" in test.dts.
+ * See scmi1_clk[] and "sandbox-scmi-agent@1" in test.dts.
  *
  * All clocks and regulators are default disabled and reset controller down.
  *
@@ -40,12 +40,13 @@
 #define SANDBOX_SCMI_AGENT_COUNT	2
 
 static struct sandbox_scmi_clk scmi0_clk[] = {
-	{ .id = 7, .rate = 1000 },
-	{ .id = 3, .rate = 333 },
+	{ .rate = 333 },
+	{ .rate = 200 },
+	{ .rate = 1000 },
 };
 
 static struct sandbox_scmi_reset scmi0_reset[] = {
-	{ .id = 3 },
+	{ .asserted = false },
 };
 
 static struct sandbox_scmi_voltd scmi0_voltd[] = {
@@ -54,7 +55,7 @@ static struct sandbox_scmi_voltd scmi0_voltd[] = {
 };
 
 static struct sandbox_scmi_clk scmi1_clk[] = {
-	{ .id = 1, .rate = 44 },
+	{ .rate = 44 },
 };
 
 /* The list saves to simulted end devices references for test purpose */
@@ -102,7 +103,6 @@ static struct sandbox_scmi_clk *get_scmi_clk_state(uint agent_id, uint clock_id)
 {
 	struct sandbox_scmi_clk *target = NULL;
 	size_t target_count = 0;
-	size_t n;
 
 	switch (agent_id) {
 	case 0:
@@ -117,9 +117,8 @@ static struct sandbox_scmi_clk *get_scmi_clk_state(uint agent_id, uint clock_id)
 		return NULL;
 	}
 
-	for (n = 0; n < target_count; n++)
-		if (target[n].id == clock_id)
-			return target + n;
+	if (clock_id < target_count)
+		return target + clock_id;
 
 	return NULL;
 }
@@ -127,13 +126,20 @@ static struct sandbox_scmi_clk *get_scmi_clk_state(uint agent_id, uint clock_id)
 static struct sandbox_scmi_reset *get_scmi_reset_state(uint agent_id,
 						       uint reset_id)
 {
-	size_t n;
+	struct sandbox_scmi_reset *target = NULL;
+	size_t target_count = 0;
 
-	if (agent_id == 0) {
-		for (n = 0; n < ARRAY_SIZE(scmi0_reset); n++)
-			if (scmi0_reset[n].id == reset_id)
-				return scmi0_reset + n;
+	switch (agent_id) {
+	case 0:
+		target = scmi0_reset;
+		target_count = ARRAY_SIZE(scmi0_reset);
+		break;
+	default:
+		return NULL;
 	}
+
+	if (reset_id < target_count)
+		return target + reset_id;
 
 	return NULL;
 }
@@ -155,6 +161,70 @@ static struct sandbox_scmi_voltd *get_scmi_voltd_state(uint agent_id,
 /*
  * Sandbox SCMI agent ops
  */
+
+static int sandbox_scmi_clock_protocol_attribs(struct udevice *dev,
+					       struct scmi_msg *msg)
+{
+	struct sandbox_scmi_agent *agent = dev_get_priv(dev);
+	struct scmi_clk_protocol_attr_out *out = NULL;
+
+	if (!msg->out_msg || msg->out_msg_sz < sizeof(*out))
+		return -EINVAL;
+
+	out = (struct scmi_clk_protocol_attr_out *)msg->out_msg;
+
+	switch (agent->idx) {
+	case 0:
+		out->attributes = ARRAY_SIZE(scmi0_clk);
+		out->status = SCMI_SUCCESS;
+		break;
+	case 1:
+		out->attributes = ARRAY_SIZE(scmi1_clk);
+		out->status = SCMI_SUCCESS;
+		break;
+	default:
+		out->status = SCMI_INVALID_PARAMETERS;
+		break;
+	}
+
+	return 0;
+}
+
+static int sandbox_scmi_clock_attribs(struct udevice *dev, struct scmi_msg *msg)
+{
+	struct sandbox_scmi_agent *agent = dev_get_priv(dev);
+	struct scmi_clk_attribute_in *in = NULL;
+	struct scmi_clk_attribute_out *out = NULL;
+	struct sandbox_scmi_clk *clk_state = NULL;
+	int ret;
+
+	if (!msg->in_msg || msg->in_msg_sz < sizeof(*in) ||
+	    !msg->out_msg || msg->out_msg_sz < sizeof(*out))
+		return -EINVAL;
+
+	in = (struct scmi_clk_attribute_in *)msg->in_msg;
+	out = (struct scmi_clk_attribute_out *)msg->out_msg;
+
+	clk_state = get_scmi_clk_state(agent->idx, in->clock_id);
+	if (!clk_state) {
+		dev_err(dev, "Unexpected clock ID %u\n", in->clock_id);
+
+		out->status = SCMI_NOT_FOUND;
+	} else {
+		memset(out, 0, sizeof(*out));
+
+		if (clk_state->enabled)
+			out->attributes = 1;
+
+		ret = snprintf(out->clock_name, sizeof(out->clock_name),
+			       "clk%u", in->clock_id);
+		assert(ret > 0 && ret < sizeof(out->clock_name));
+
+		out->status = SCMI_SUCCESS;
+	}
+
+	return 0;
+}
 
 static int sandbox_scmi_clock_rate_set(struct udevice *dev,
 				       struct scmi_msg *msg)
@@ -479,6 +549,10 @@ static int sandbox_scmi_test_process_msg(struct udevice *dev,
 	switch (msg->protocol_id) {
 	case SCMI_PROTOCOL_ID_CLOCK:
 		switch (msg->message_id) {
+		case SCMI_PROTOCOL_ATTRIBUTES:
+			return sandbox_scmi_clock_protocol_attribs(dev, msg);
+		case SCMI_CLOCK_ATTRIBUTES:
+			return sandbox_scmi_clock_attribs(dev, msg);
 		case SCMI_CLOCK_RATE_SET:
 			return sandbox_scmi_clock_rate_set(dev, msg);
 		case SCMI_CLOCK_RATE_GET:

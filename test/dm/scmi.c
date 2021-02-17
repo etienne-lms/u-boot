@@ -58,7 +58,7 @@ static int ut_assert_scmi_state_postprobe(struct unit_test_state *uts,
 	ut_asserteq(2, scmi_ctx->agent_count);
 
 	ut_assertnonnull(agent0);
-	ut_asserteq(2, agent0->clk_count);
+	ut_asserteq(3, agent0->clk_count);
 	ut_assertnonnull(agent0->clk);
 	ut_asserteq(1, agent0->reset_count);
 	ut_assertnonnull(agent0->reset);
@@ -128,6 +128,15 @@ static int dm_test_scmi_clocks(struct unit_test_state *uts)
 	if (ret)
 		return ret;
 
+	/*
+	 * As stated in sandbox test.dts:
+	 * - Sandbox device clock #0 relates to SCMI server #0 clock #2
+	 * - Sandbox device clock #1 relates to SCMI server #0 clock #0
+	 * - Sandbox device clock #2 relates to SCMI server #1 clock #0
+	 *
+	 * Note there exists a SCMI server #0 clock #1 but is it not
+	 * used but the sandbox test device.
+	 */
 	scmi_devices = sandbox_scmi_devices_ctx(dev);
 	scmi_ctx = sandbox_scmi_service_ctx();
 	agent0 = scmi_ctx->agent[0];
@@ -141,8 +150,9 @@ static int dm_test_scmi_clocks(struct unit_test_state *uts)
 	ret_dev = clk_set_rate(&scmi_devices->clk[1], 1088);
 	ut_assert(!ret_dev || ret_dev == 1088);
 
-	ut_asserteq(1000, agent0->clk[0].rate);
-	ut_asserteq(1088, agent0->clk[1].rate);
+	ut_asserteq(1088, agent0->clk[0].rate);
+	ut_asserteq(200, agent0->clk[1].rate);
+	ut_asserteq(1000, agent0->clk[2	].rate);
 	ut_asserteq(44, agent1->clk[0].rate);
 
 	ut_asserteq(1000, clk_get_rate(&scmi_devices->clk[0]));
@@ -156,20 +166,23 @@ static int dm_test_scmi_clocks(struct unit_test_state *uts)
 	/* Test SCMI clocks gating manipulation */
 	ut_assert(!agent0->clk[0].enabled);
 	ut_assert(!agent0->clk[1].enabled);
+	ut_assert(!agent0->clk[2].enabled);
 	ut_assert(!agent1->clk[0].enabled);
 
-	ut_asserteq(0, clk_enable(&scmi_devices->clk[1]));
+	ut_asserteq(0, clk_enable(&scmi_devices->clk[0]));
 	ut_asserteq(0, clk_enable(&scmi_devices->clk[2]));
 
 	ut_assert(!agent0->clk[0].enabled);
-	ut_assert(agent0->clk[1].enabled);
+	ut_assert(!agent0->clk[1].enabled);
+	ut_assert(agent0->clk[2].enabled);
 	ut_assert(agent1->clk[0].enabled);
 
-	ut_assertok(clk_disable(&scmi_devices->clk[1]));
+	ut_assertok(clk_disable(&scmi_devices->clk[0]));
 	ut_assertok(clk_disable(&scmi_devices->clk[2]));
 
 	ut_assert(!agent0->clk[0].enabled);
 	ut_assert(!agent0->clk[1].enabled);
+	ut_assert(!agent0->clk[2].enabled);
 	ut_assert(!agent1->clk[0].enabled);
 
 	return release_sandbox_scmi_test_devices(uts, dev);
@@ -188,6 +201,10 @@ static int dm_test_scmi_resets(struct unit_test_state *uts)
 	if (ret)
 		return ret;
 
+	/*
+	 * As stated in sandbox test.dts:
+	 * - Sandbox device reset ctrl #0 relates to SCMI #0 reset domain #0
+	 */
 	scmi_devices = sandbox_scmi_devices_ctx(dev);
 	scmi_ctx = sandbox_scmi_service_ctx();
 	agent0 = scmi_ctx->agent[0];
