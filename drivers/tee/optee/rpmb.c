@@ -14,6 +14,8 @@
 #include "optee_private.h"
 #include "rpmb_emu.h"
 
+#define RPMB_EMULATION
+
 /*
  * Request and response definitions must be in sync with the secure side of
  * OP-TEE.
@@ -97,6 +99,7 @@ static u32 rpmb_get_dev_info(u16 dev_id, struct rpmb_dev_info *info)
 	return TEE_SUCCESS;
 }
 
+#ifndef RPMB_EMULATION
 static u32 rpmb_process_request(struct optee_private *priv, void *req,
 				ulong req_size, void *rsp, ulong rsp_size)
 {
@@ -130,6 +133,7 @@ static u32 rpmb_process_request(struct optee_private *priv, void *req,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 }
+#endif
 
 void optee_suppl_cmd_rpmb(struct udevice *dev, struct optee_msg_arg *arg)
 {
@@ -155,12 +159,12 @@ void optee_suppl_cmd_rpmb(struct udevice *dev, struct optee_msg_arg *arg)
 	rsp_buf = (u8 *)rsp_shm->addr + arg->params[1].u.rmem.offs;
 	rsp_size = arg->params[1].u.rmem.size;
 
-#ifdef EMU
-	arg->ret = rpmb_process_request(dev_get_priv(dev), req_buf, req_size,
-					rsp_buf, rsp_size);
-#else
+#ifdef RPMB_EMULATION
 	arg->ret = rpmb_process_request_emu(req_buf, req_size, rsp_buf,
 					    rsp_size);
+#else
+	arg->ret = rpmb_process_request(dev_get_priv(dev), req_buf, req_size,
+					rsp_buf, rsp_size);
 #endif
 }
 
