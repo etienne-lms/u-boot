@@ -32,6 +32,19 @@
 						 TEE_PARAM_ATTR_META)
 
 /*
+ * Value for tee_open_session_arg::clnt_login
+ */
+enum tee_session_login {
+	TEE_SESSION_LOGIN_PUBLIC = 0,
+	TEE_SESSION_LOGIN_USER,
+	TEE_SESSION_LOGIN_GROUP,
+	TEE_SESSION_LOGIN_APPLICATION,
+	TEE_SESSION_LOGIN_APPLICATION_USER,
+	TEE_SESSION_LOGIN_APPLICATION_GROUP,
+	TEE_SESSION_LOGIN_REE_KERNEL,
+};
+
+/*
  * Some Global Platform error codes which has a meaning if the
  * TEE_GEN_CAP_GP bit is returned by the driver in
  * struct tee_version_data::gen_caps
@@ -135,8 +148,8 @@ struct tee_param {
 /**
  * struct tee_open_session_arg - extra arguments for tee_open_session()
  * @uuid:	[in] UUID of the Trusted Application
- * @clnt_uuid:	[in] Normally zeroes
- * @clnt_login:	[in] Normally 0
+ * @clnt_uuid:	[in] UUID of client, zeroes for PUBLIC/REE_KERNEL
+ * @clnt_login:	[in] Class of client TEE_SESSION_LOGIN_*
  * @session:	[out] Session id
  * @ret:	[out] return value
  * @ret_origin:	[out] origin of the return value
@@ -144,7 +157,7 @@ struct tee_param {
 struct tee_open_session_arg {
 	u8 uuid[TEE_UUID_LEN];
 	u8 clnt_uuid[TEE_UUID_LEN];
-	u32 clnt_login;
+	enum tee_session_login clnt_login;
 	u32 session;
 	u32 ret;
 	u32 ret_origin;
