@@ -95,6 +95,8 @@
 #define OPTEE_MSG_LOGIN_APPLICATION		0x00000004
 #define OPTEE_MSG_LOGIN_APPLICATION_USER	0x00000005
 #define OPTEE_MSG_LOGIN_APPLICATION_GROUP	0x00000006
+/* OP-TEE extension: log as REE kernel */
+#define OPTEE_MSG_LOGIN_REE_KERNEL		0x80000000
 
 /*
  * Page size used in non-contiguous buffer entries

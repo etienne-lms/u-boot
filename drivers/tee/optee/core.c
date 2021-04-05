@@ -349,6 +349,28 @@ static int optee_close_session(struct udevice *dev, u32 session)
 	return 0;
 }
 
+static uint32_t optee_login_id(enum tee_session_login login)
+{
+	/* Treat invalid IDs as public login */
+	switch (login) {
+	case TEE_SESSION_LOGIN_USER:
+		return OPTEE_MSG_LOGIN_USER;
+	case TEE_SESSION_LOGIN_GROUP:
+		return OPTEE_MSG_LOGIN_GROUP;
+	case TEE_SESSION_LOGIN_APPLICATION:
+		return OPTEE_MSG_LOGIN_APPLICATION;
+	case TEE_SESSION_LOGIN_APPLICATION_USER:
+		return OPTEE_MSG_LOGIN_APPLICATION;
+	case TEE_SESSION_LOGIN_APPLICATION_GROUP:
+		return OPTEE_MSG_LOGIN_APPLICATION;
+	case TEE_SESSION_LOGIN_REE_KERNEL:
+		return OPTEE_MSG_LOGIN_REE_KERNEL;
+	case TEE_SESSION_LOGIN_PUBLIC:
+	default:
+		return OPTEE_MSG_LOGIN_PUBLIC;
+	}
+}
+
 static int optee_open_session(struct udevice *dev,
 			      struct tee_open_session_arg *arg,
 			      uint num_params, struct tee_param *params)
@@ -372,7 +394,7 @@ static int optee_open_session(struct udevice *dev,
 				  OPTEE_MSG_ATTR_META;
 	memcpy(&msg_arg->params[0].u.value, arg->uuid, sizeof(arg->uuid));
 	memcpy(&msg_arg->params[1].u.value, arg->uuid, sizeof(arg->clnt_uuid));
-	msg_arg->params[1].u.value.c = arg->clnt_login;
+	msg_arg->params[1].u.value.c = optee_login_id(arg->clnt_login);
 
 	rc = to_msg_param(msg_arg->params + 2, num_params, params);
 	if (rc)
